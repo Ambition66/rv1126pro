@@ -1,199 +1,157 @@
-# Git 操作说明
+# Git 推送和合并操作说明
 
-本文说明如何把当前文件夹 `rv1126` 推送到远程仓库、如何推送到分支，以及如何把分支合并回主分支。
+本文说明当前文件夹 `rv1126` 如何提交到仓库、如何推送到主分支、如何推送到新分支，以及如何把分支合并回主分支。
 
 当前仓库信息：
 
 ```powershell
-本地目录：C:\Users\xinweis\OneDrive - Qualcomm\Desktop\rv1126
-远程仓库：origin -> https://github.com/Ambition66/rv1126pro.git
-主分支：main
+# 当前本地目录
+C:\Users\xinweis\OneDrive - Qualcomm\Desktop\rv1126
+
+# 当前远程仓库
+origin -> https://github.com/Ambition66/rv1126pro.git
+
+# 当前主分支
+main
 ```
 
-## 1. 检查当前仓库状态
+## 1. 推送到主分支 main 的完整流程
 
-进入当前文件夹：
+如果你要把当前文件夹里的代码直接推送到主分支 `main`，按下面命令执行。
 
 ```powershell
+# 1. 进入当前项目目录
 cd "C:\Users\xinweis\OneDrive - Qualcomm\Desktop\rv1126"
-```
 
-查看当前分支和文件状态：
-
-```powershell
-git status
-```
-
-查看远程仓库地址：
-
-```powershell
-git remote -v
-```
-
-如果能看到类似下面的输出，说明已经绑定远程仓库：
-
-```text
-origin  https://github.com/Ambition66/rv1126pro.git (fetch)
-origin  https://github.com/Ambition66/rv1126pro.git (push)
-```
-
-## 2. 把当前文件夹内容提交到本地仓库
-
-添加当前文件夹下所有新增、修改、删除的文件：
-
-```powershell
-git add .
-```
-
-提交到本地仓库：
-
-```powershell
-git commit -m "Update project files"
-```
-
-如果提示 `nothing to commit`，说明当前没有需要提交的变更。
-
-## 3. 推送到远程主分支 main
-
-确认当前在 `main` 分支：
-
-```powershell
-git branch
-```
-
-如果当前不是 `main`，切换到 `main`：
-
-```powershell
+# 2. 切换到主分支 main
 git switch main
-```
 
-推送到远程仓库的 `main` 分支：
+# 3. 拉取远程 main 最新代码，避免本地代码落后
+git pull origin main
 
-```powershell
-git push origin main
-```
-
-常用完整流程：
-
-```powershell
+# 4. 查看当前有哪些文件被修改、新增或删除
 git status
+
+# 5. 添加当前目录下所有变更文件
 git add .
+
+# 6. 提交到本地仓库，提交说明可以按实际修改内容改
 git commit -m "Update project files"
+
+# 7. 推送到远程仓库的 main 分支
 git push origin main
 ```
 
-## 4. 推送到一个新分支
+注意：
 
-如果不想直接推到 `main`，可以先创建新分支，例如 `dev`：
+- 如果 `git commit` 提示 `nothing to commit`，说明没有需要提交的修改。
+- 如果 `git pull origin main` 或 `git push origin main` 提示冲突，需要先解决冲突再继续。
+- 直接推送 `main` 适合小改动；多人协作时更推荐先推分支，再合并。
+
+## 2. 推送到新分支的完整流程
+
+如果你不想直接推送到 `main`，可以创建一个新分支，例如 `dev`，然后把代码推送到这个分支。
 
 ```powershell
+# 1. 进入当前项目目录
+cd "C:\Users\xinweis\OneDrive - Qualcomm\Desktop\rv1126"
+
+# 2. 先切换到 main 分支
+git switch main
+
+# 3. 拉取远程 main 最新代码，保证新分支基于最新 main 创建
+git pull origin main
+
+# 4. 创建并切换到新分支 dev
 git switch -c dev
-```
 
-添加并提交修改：
+# 5. 查看当前有哪些文件被修改、新增或删除
+git status
 
-```powershell
+# 6. 添加当前目录下所有变更文件
 git add .
+
+# 7. 提交到本地 dev 分支
 git commit -m "Update project files"
-```
 
-把本地 `dev` 分支推送到远程仓库：
-
-```powershell
+# 8. 把本地 dev 分支推送到远程仓库，并建立跟踪关系
 git push -u origin dev
 ```
 
-参数说明：
-
-- `origin`：远程仓库名称。
-- `dev`：要推送的分支名称。
-- `-u`：建立本地分支和远程分支的跟踪关系，以后在这个分支上可以直接使用 `git push`。
-
-后续在 `dev` 分支继续提交时，可以直接执行：
+后续如果你已经在 `dev` 分支上继续修改代码，只需要执行：
 
 ```powershell
+# 1. 确认当前在 dev 分支
+git branch
+
+# 2. 查看修改状态
+git status
+
+# 3. 添加所有变更
 git add .
+
+# 4. 提交修改
 git commit -m "Update files"
+
+# 5. 推送到远程 dev 分支
 git push
 ```
 
-## 5. 切换已有分支
+说明：
 
-查看本地分支：
+- `dev` 是分支名，可以换成其他名字，例如 `feature/ffmpeg-update`。
+- `git push -u origin dev` 只需要第一次推送新分支时使用。
+- 后面这个分支已经和远程分支绑定后，直接 `git push` 就可以。
+
+## 3. 合并分支到 main 的完整流程
+
+假设你已经把代码推送到了 `dev` 分支，现在要把 `dev` 合并回 `main`。
 
 ```powershell
-git branch
+# 1. 进入当前项目目录
+cd "C:\Users\xinweis\OneDrive - Qualcomm\Desktop\rv1126"
+
+# 2. 切换到主分支 main
+git switch main
+
+# 3. 拉取远程 main 最新代码
+git pull origin main
+
+# 4. 合并 dev 分支到当前 main 分支
+git merge dev
+
+# 5. 如果合并没有冲突，把合并后的 main 推送到远程仓库
+git push origin main
 ```
 
-查看本地和远程所有分支：
+如果 `dev` 是远程分支，本地还没有这个分支，可以先执行：
 
 ```powershell
-git branch -a
-```
-
-切换到已有本地分支：
-
-```powershell
-git switch dev
-```
-
-如果远程已经有 `dev` 分支，但本地还没有，可以执行：
-
-```powershell
+# 1. 拉取远程分支信息
 git fetch origin
-git switch dev
-```
 
-或者：
-
-```powershell
+# 2. 创建本地 dev 分支，并关联远程 origin/dev
 git switch -c dev origin/dev
-```
 
-## 6. 把分支合并到 main
-
-假设现在开发分支是 `dev`，要把 `dev` 合并回 `main`。
-
-先切换到主分支：
-
-```powershell
+# 3. 切回 main
 git switch main
-```
 
-拉取远程最新代码，避免本地 `main` 落后：
-
-```powershell
+# 4. 拉取远程 main 最新代码
 git pull origin main
-```
 
-合并 `dev` 到 `main`：
-
-```powershell
+# 5. 合并 dev 到 main
 git merge dev
-```
 
-如果没有冲突，推送合并后的 `main`：
-
-```powershell
+# 6. 推送合并后的 main
 git push origin main
 ```
 
-完整流程：
+## 4. 合并冲突处理流程
+
+如果执行 `git merge dev` 后出现冲突，按下面流程处理。
 
 ```powershell
-git switch main
-git pull origin main
-git merge dev
-git push origin main
-```
-
-## 7. 处理合并冲突
-
-如果执行 `git merge dev` 后出现冲突，Git 会提示哪些文件冲突。
-
-查看冲突文件：
-
-```powershell
+# 1. 查看哪些文件冲突
 git status
 ```
 
@@ -207,103 +165,98 @@ dev 分支上的内容
 >>>>>>> dev
 ```
 
-手动保留正确内容，并删除 `<<<<<<<`、`=======`、`>>>>>>>` 这些标记。
+处理方式：
 
-解决完成后执行：
+- `<<<<<<< HEAD` 到 `=======` 中间是 `main` 分支的内容。
+- `=======` 到 `>>>>>>> dev` 中间是 `dev` 分支的内容。
+- 手动保留你需要的正确内容。
+- 删除 `<<<<<<< HEAD`、`=======`、`>>>>>>> dev` 这些冲突标记。
+
+冲突解决完成后执行：
 
 ```powershell
+# 1. 添加已经解决冲突的文件
 git add .
+
+# 2. 提交合并结果
 git commit -m "Resolve merge conflicts"
+
+# 3. 推送合并后的 main
 git push origin main
 ```
 
-## 8. 删除已经合并的分支
-
-合并完成后，如果不再需要 `dev` 分支，可以删除本地分支：
+## 5. 常用检查命令
 
 ```powershell
-git branch -d dev
+# 查看当前分支和文件修改状态
+git status
+
+# 查看当前所在分支，本地分支前面会有 *
+git branch
+
+# 查看本地和远程所有分支
+git branch -a
+
+# 查看远程仓库地址
+git remote -v
+
+# 查看具体修改了哪些内容
+git diff
+
+# 拉取远程分支信息
+git fetch origin
 ```
 
-删除远程分支：
+## 6. 删除已经合并的分支
+
+如果 `dev` 已经合并到 `main`，并且后续不再需要，可以删除分支。
 
 ```powershell
+# 删除本地 dev 分支
+git branch -d dev
+
+# 删除远程 dev 分支
 git push origin --delete dev
 ```
 
-如果分支还没有合并，`git branch -d dev` 可能会拒绝删除。确认不需要该分支后，可以强制删除本地分支：
+如果本地分支还没有合并，`git branch -d dev` 会拒绝删除。确认不需要后，可以强制删除本地分支：
 
 ```powershell
+# 强制删除本地 dev 分支，谨慎使用
 git branch -D dev
 ```
 
-## 9. 推荐日常流程
+## 7. 推荐使用方式
 
-开发新功能时：
+个人小修改可以直接推 `main`：
 
 ```powershell
+cd "C:\Users\xinweis\OneDrive - Qualcomm\Desktop\rv1126"
 git switch main
 git pull origin main
-git switch -c feature/your-feature-name
-```
-
-开发完成后：
-
-```powershell
-git status
 git add .
-git commit -m "Describe your change"
-git push -u origin feature/your-feature-name
-```
-
-合并回 `main`：
-
-```powershell
-git switch main
-git pull origin main
-git merge feature/your-feature-name
+git commit -m "Update project files"
 git push origin main
 ```
 
-## 10. 常见问题
-
-### 忘记当前在哪个分支
+多人协作或较大修改建议使用分支：
 
 ```powershell
-git branch
-```
-
-带 `*` 的就是当前分支。
-
-### 想看哪些文件被修改了
-
-```powershell
-git status
-```
-
-### 想看具体修改内容
-
-```powershell
-git diff
-```
-
-### 提交信息写错了
-
-如果刚提交完，还没有推送，可以修改最后一次提交信息：
-
-```powershell
-git commit --amend -m "New commit message"
-```
-
-### 推送前先同步远程代码
-
-```powershell
+cd "C:\Users\xinweis\OneDrive - Qualcomm\Desktop\rv1126"
+git switch main
 git pull origin main
+git switch -c dev
+git add .
+git commit -m "Update project files"
+git push -u origin dev
 ```
 
-如果当前在其他分支，例如 `dev`：
+确认分支内容没问题后再合并：
 
 ```powershell
-git pull origin dev
+git switch main
+git pull origin main
+git merge dev
+git push origin main
 ```
 
