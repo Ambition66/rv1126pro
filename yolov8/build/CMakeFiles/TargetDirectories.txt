@@ -1,0 +1,9 @@
+/root/yolov8/build/CMakeFiles/rebuild_cache.dir
+/root/yolov8/build/CMakeFiles/edit_cache.dir
+/root/yolov8/build/CMakeFiles/yolov8_video.dir
+/root/yolov8/build/CMakeFiles/yolov8_img.dir
+/root/yolov8/build/CMakeFiles/draw_lib.dir
+/root/yolov8/build/CMakeFiles/yolov8_lib.dir
+/root/yolov8/build/CMakeFiles/yolov8_thread_pool.dir
+/root/yolov8/build/CMakeFiles/rknn_engine.dir
+/root/yolov8/build/CMakeFiles/nn_process.dir
