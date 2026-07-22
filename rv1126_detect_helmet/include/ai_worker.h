@@ -2,6 +2,7 @@
 #define RV1126_DETECT_HELMET_AI_WORKER_H
 
 #include <pthread.h>
+#include <atomic>
 
 #include "ai_frame_queue.h"
 #include "ai_result_manager.h"
@@ -26,7 +27,7 @@ private:
     AiResultManager *result_manager_;
     HelmetDetector *detector_;
     pthread_t thread_;
-    bool running_;
+    std::atomic<bool> running_;
 };
 
 #endif

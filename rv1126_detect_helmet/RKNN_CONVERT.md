@@ -21,7 +21,7 @@ RV1126 使用老一代 RKNPU/RKNN runtime。转换模型时需要注意：
 - 板端使用 RV1126 SDK 中匹配的 `librknn_runtime.so` / `librknn_api.so`。
 - RKNN-Toolkit 版本不要高于板端 runtime 太多，避免生成板端无法加载的 `.rknn`。
 - 本仓库可参考 `rv1126_AI/README.md` 中的经验：`RKNN-Toolkit 1.7.3` 对应板端 `librknn_runtime 1.7.5`。
-- 本工程 `Makefile` 默认使用 `../rv1126_AI/face_smoking_phone_sleep/include/rknn_api.h` 和 `../rv1126_ffmpeg/rv1126_lib/librknn_api.so`。
+- 本工程 `Makefile` 默认使用 `third_party/rv1126` 内置的旧版 `rknn_api.h` 和 ARM32 RKNN 库。
 
 不要把 `rv1126b` 当成 `rv1126` 使用。`rv1126b` 属于更新工具链支持的平台名，和老 RV1126 的部署链路不是一回事。
 
@@ -117,18 +117,15 @@ make ENABLE_RKNN=1 ENABLE_RKMEDIA=1
 
 ## 6. 当前后处理状态
 
-`HelmetDetector::Postprocess()` 目前还是通用占位解析，只支持类似下面这种已经解码好的检测行：
+`HelmetDetector::Postprocess()` 已适配内置 `third_party/yolo26` 定制导出的 6 个输出：
 
 ```text
-x0 y0 x1 y1 score class_id
+box_p3, class_p3, box_p4, class_p4, box_p5, class_p5
 ```
 
-或者：
+实现包含 `reg_max=1`/DFL 距离解码、P3/P4/P5 网格和步长换算、sigmoid、
+置信度过滤、按类别 NMS 以及 letterbox 坐标还原。同时兼容标准端到端
+`[1, N, 6]` 的 `xyxy + score + class_id` 输出。
 
-```text
-cx cy w h score class_id
-```
-
-真实 `helmet.rknn` 生成后，需要先看板端打印出的 RKNN 输出 tensor 数量和 shape。
-
-如果模型输出的是 YOLO head，例如 YOLOv5 的三个输出头，就要在 `HelmetDetector::Postprocess()` 中补完整 YOLO 解码、阈值过滤、NMS、坐标映射逻辑。只有这一步适配完成后，工程才算真正跑通检测结果。
+模型上板后仍需检查启动时打印的 6 个 tensor shape 和顺序，并用同一张图片
+对比 PyTorch、ONNX、RKNN 结果。其他 YOLOv5 三头格式不在本后处理器的兼容范围内。

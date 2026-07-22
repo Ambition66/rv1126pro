@@ -1,15 +1,5 @@
 #!/usr/bin/env python3
-"""Import the helmet dataset referenced by yolo26_helmet/helmet.yaml.
-
-The yolo26_helmet project contains the training entry and dataset YAML, but in
-this workspace the actual dataset is referenced by an external path such as:
-
-    E:\\YOLOV26\\ultralytics-main\\datasets\\helmet_dataset
-
-Run this script on the machine where that dataset path exists. It copies the
-dataset into rv1126_detect_helmet/datasets/helmet_dataset so this project can be
-self-contained for training and export.
-"""
+"""Validate or optionally replace the dataset vendored with this project."""
 
 from __future__ import annotations
 
@@ -19,8 +9,8 @@ from pathlib import Path
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_SOURCE_YAML = PROJECT_ROOT.parent / "yolo26_helmet" / "helmet.yaml"
 DEFAULT_DEST = PROJECT_ROOT / "datasets" / "helmet_dataset"
+DEFAULT_SOURCE_YAML = DEFAULT_DEST / "helmet.yaml"
 
 
 def parse_args() -> argparse.Namespace:
@@ -29,7 +19,7 @@ def parse_args() -> argparse.Namespace:
         "--source-yaml",
         type=Path,
         default=DEFAULT_SOURCE_YAML,
-        help="Dataset YAML to read. Default: ../yolo26_helmet/helmet.yaml",
+        help="Dataset YAML to read. Default: the vendored dataset YAML",
     )
     parser.add_argument(
         "--source-dir",
@@ -95,6 +85,10 @@ def main() -> int:
         if not source_path:
             raise ValueError(f"missing path field in {source_yaml}")
         source_dir = Path(source_path)
+        if not source_dir.is_absolute():
+            project_relative = PROJECT_ROOT / source_dir
+            yaml_relative = source_yaml.parent / source_dir
+            source_dir = project_relative if project_relative.is_dir() else yaml_relative
     else:
         source_dir = args.source_dir
     source_dir = source_dir.resolve()
@@ -102,9 +96,15 @@ def main() -> int:
     if not source_dir.is_dir():
         raise FileNotFoundError(
             f"dataset source directory not found: {source_dir}\n"
-            "Run this on the machine where the yolo26_helmet dataset path exists, "
-            "or pass --source-dir explicitly."
+            "Pass --source-dir explicitly when importing an external dataset."
         )
+
+    if source_dir == dest_dir:
+        for child in ("images", "labels"):
+            if not (dest_dir / child).is_dir():
+                raise FileNotFoundError(f"vendored dataset child not found: {dest_dir / child}")
+        print(f"vendored dataset is ready: {dest_dir}")
+        return 0
 
     if dest_dir.exists() and args.overwrite:
         shutil.rmtree(dest_dir)
@@ -116,7 +116,7 @@ def main() -> int:
     local_yaml = dest_dir / "helmet.yaml"
     yaml_text = source_yaml.read_text(encoding="utf-8")
     yaml_text = "\n".join(
-        "./datasets/helmet_dataset" if line.strip().startswith("path:") else line
+        "path: ./datasets/helmet_dataset" if line.strip().startswith("path:") else line
         for line in yaml_text.splitlines()
     )
     local_yaml.write_text(yaml_text + "\n", encoding="utf-8")

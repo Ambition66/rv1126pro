@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <signal.h>
 #include <unistd.h>
 
 #include "ai_frame_queue.h"
@@ -9,6 +10,13 @@
 #include "helmet_detector.h"
 #include "media_pipeline.h"
 
+static volatile sig_atomic_t keep_running = 1;
+
+static void handle_signal(int signal_number) {
+    (void)signal_number;
+    keep_running = 0;
+}
+
 // 主程序只负责装配各个模块：
 // 1. 加载 RKNN 模型；
 // 2. 启动媒体链路，把 RGA 抽帧送入 AiFrameQueue；
@@ -16,7 +24,7 @@
 // 4. 周期性读取最新检测结果，后续叠框/报警/上报都从这里扩展。
 static void print_usage(const char *program) {
     printf("Usage:\n");
-    printf("  %s --model models/helmet.rknn --stream rtmp://host/live/helmet [--protocol flv|ts] [--width 1280] [--height 720] [--fps 25] [--ai-fps 5] [--ai-width 640] [--ai-height 640]\n", program);
+    printf("  %s --model models/helmet.rknn --stream rtmp://host/live/helmet [--protocol flv|ts] [--width 1280] [--height 720] [--fps 25] [--ai-fps 5] [--ai-width 640] [--ai-height 640] [--conf 0.35] [--nms 0.45]\n", program);
 }
 
 static const char *get_arg(int argc, char **argv, const char *name, const char *default_value) {
@@ -38,8 +46,14 @@ int main(int argc, char **argv) {
     int ai_fps = atoi(get_arg(argc, argv, "--ai-fps", "5"));
     int ai_width = atoi(get_arg(argc, argv, "--ai-width", "640"));
     int ai_height = atoi(get_arg(argc, argv, "--ai-height", "640"));
+    float confidence_threshold = (float)atof(get_arg(argc, argv, "--conf", "0.35"));
+    float nms_threshold = (float)atof(get_arg(argc, argv, "--nms", "0.45"));
 
-    if (!stream_url) {
+    if (!stream_url || width <= 0 || height <= 0 || fps <= 0 || ai_fps <= 0 ||
+        ai_width <= 0 || ai_height <= 0 || ai_fps > fps ||
+        confidence_threshold <= 0.0f || confidence_threshold >= 1.0f ||
+        nms_threshold <= 0.0f || nms_threshold >= 1.0f ||
+        (strcmp(protocol, "flv") != 0 && strcmp(protocol, "ts") != 0)) {
         print_usage(argv[0]);
         return -1;
     }
@@ -50,6 +64,7 @@ int main(int argc, char **argv) {
     // 检测器先加载模型。媒体线程启动后会持续把 AI 帧送入 ai_queue，
     // AiWorker 再复用这个 detector 做推理。
     HelmetDetector detector;
+    detector.SetThresholds(confidence_threshold, nms_threshold);
     if (detector.LoadModel(model_path) != 0) {
         printf("load model failed: %s\n", model_path);
         return -1;
@@ -83,20 +98,38 @@ int main(int argc, char **argv) {
     AiWorker ai_worker;
     if (ai_worker.Start(&ai_queue, &result_manager, &detector) != 0) {
         printf("ai worker start failed\n");
+        pipeline.Stop();
         return -1;
     }
 
+    signal(SIGINT, handle_signal);
+    signal(SIGTERM, handle_signal);
     printf("rv1126_detect_helmet started\n");
-    while (1) {
-        sleep(5);
+    int last_printed_frame = -1;
+    while (keep_running) {
+        sleep(1);
         helmet_result_t result;
         // 这里只打印最新结果。后续可以在这里接入告警、截图、平台上报等业务逻辑。
-        if (result_manager.GetLatest(&result)) {
+        if (result_manager.GetLatest(&result) && result.frame_id != last_printed_frame) {
+            last_printed_frame = result.frame_id;
             printf("latest result: frame=%d detections=%d\n",
                    result.frame_id,
                    result.detection_count);
+            for (int i = 0; i < result.detection_count; ++i) {
+                const helmet_detection_t &detection = result.detections[i];
+                printf("  class=%d confidence=%.3f box=[%d,%d,%d,%d]\n",
+                       detection.class_id,
+                       detection.confidence,
+                       detection.x,
+                       detection.y,
+                       detection.w,
+                       detection.h);
+            }
         }
     }
 
+    printf("stopping...\n");
+    pipeline.Stop();
+    ai_worker.Stop();
     return 0;
 }

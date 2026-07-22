@@ -1,9 +1,9 @@
 build/
 runs/
+.venv/
+__pycache__/
+*.pyc
 *.o
 rv1126_detect_helmet_app
-models/*.pt
-models/*.onnx
-models/*.rknn
-datasets/helmet_dataset/images/
-datasets/helmet_dataset/labels/
+# Model artifacts and the helmet dataset are intentionally versioned so this
+# directory remains reproducible when copied or cloned on its own.

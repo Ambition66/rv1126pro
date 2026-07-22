@@ -1,7 +1,9 @@
 hide := @
 ECHO := echo
 
-G++ ?= /opt/rv1126_rv1109_linux_sdk_v1.8.0_20210224/prebuilts/gcc/linux-x86/arm/gcc-arm-8.3-2019.03-x86_64-arm-linux-gnueabihf/bin/arm-linux-gnueabihf-g++
+CROSS_COMPILE ?= arm-linux-gnueabihf-
+G++ ?= $(CROSS_COMPILE)g++
+HOST_CXX ?= g++
 
 TARGET := rv1126_detect_helmet_app
 
@@ -10,10 +12,15 @@ TARGET := rv1126_detect_helmet_app
 # RKNN_INC uses the old RV1126 rknn_api.h, not the RKNPU2/RV1126B header.
 ENABLE_RKNN ?= 1
 ENABLE_RKMEDIA ?= 0
-RKNN_INC ?= ../rv1126_AI/face_smoking_phone_sleep/include
-RKNN_LIB ?= ../rv1126_ffmpeg/rv1126_lib/librknn_api.so
-RV1126_LIB_DIR ?= ../rv1126_ffmpeg/rv1126_lib
-RV1126_FFMPEG_DIR ?= ../rv1126_ffmpeg
+THIRD_PARTY_DIR ?= ./third_party/rv1126
+RKNN_INC ?= $(THIRD_PARTY_DIR)/include/rknn
+RKNN_LIB ?= $(THIRD_PARTY_DIR)/lib/platform/librknn_api.so
+RV1126_PLATFORM_LIB ?= $(THIRD_PARTY_DIR)/lib/platform
+RV1126_FFMPEG_INC ?= $(THIRD_PARTY_DIR)/include/ffmpeg
+RV1126_FFMPEG_LIB ?= $(THIRD_PARTY_DIR)/lib/ffmpeg
+RV1126_SRT_LIB ?= $(THIRD_PARTY_DIR)/lib/srt
+RV1126_OPENSSL_LIB ?= $(THIRD_PARTY_DIR)/lib/openssl
+RV1126_X264_LIB ?= $(THIRD_PARTY_DIR)/lib/x264
 
 SRC := \
 	src/main.cpp \
@@ -21,6 +28,7 @@ SRC := \
 	src/ai/ai_result_manager.cpp \
 	src/ai/ai_worker.cpp \
 	src/ai/helmet_detector.cpp \
+	src/ai/helmet_postprocess.cpp \
 	src/ai/rknn_engine.cpp \
 	src/media/media_pipeline.cpp
 
@@ -29,27 +37,29 @@ LD_FLAGS := -lpthread
 
 ifeq ($(ENABLE_RKNN),1)
 CFLAGS += -DENABLE_RKNN -I$(RKNN_INC)
-LD_FLAGS += $(RKNN_LIB) -Wl,-rpath-link,$(RV1126_LIB_DIR)
+LD_FLAGS += $(RKNN_LIB) -Wl,-rpath-link,$(RV1126_PLATFORM_LIB)
 endif
 
 ifeq ($(ENABLE_RKMEDIA),1)
 CFLAGS += -DENABLE_RKMEDIA \
-	-I$(RV1126_FFMPEG_DIR)/include/rkmedia \
-	-I$(RV1126_FFMPEG_DIR)/arm32_ffmpeg_srt/include
+	-I$(THIRD_PARTY_DIR)/include/rkmedia \
+	-I$(RV1126_FFMPEG_INC)
 LD_FLAGS += \
-	-L$(RV1126_FFMPEG_DIR)/rv1126_lib \
-	-L$(RV1126_FFMPEG_DIR)/arm32_ffmpeg_srt/lib \
-	-L$(RV1126_FFMPEG_DIR)/opt/arm_libsrt/lib \
-	-L$(RV1126_FFMPEG_DIR)/opt/arm_openssl/lib \
+	-L$(RV1126_FFMPEG_LIB) \
+	-L$(RV1126_PLATFORM_LIB) \
+	-L$(RV1126_SRT_LIB) \
+	-L$(RV1126_OPENSSL_LIB) \
+	-L$(RV1126_X264_LIB) \
 	-leasymedia -ldrm -lrockchip_mpp -lrga \
 	-lavformat -lavcodec -lavutil -lswresample \
-	-lsrt -lssl -lcrypto \
+	-lsrt -lssl -lcrypto -lx264 \
 	-lasound -lv4l2 -lv4lconvert \
 	-lpthread \
-	-Wl,-rpath-link,$(RV1126_FFMPEG_DIR)/rv1126_lib \
-	-Wl,-rpath-link,$(RV1126_FFMPEG_DIR)/arm32_ffmpeg_srt/lib \
-	-Wl,-rpath-link,$(RV1126_FFMPEG_DIR)/opt/arm_libsrt/lib \
-	-Wl,-rpath-link,$(RV1126_FFMPEG_DIR)/opt/arm_openssl/lib
+	-Wl,-rpath-link,$(RV1126_PLATFORM_LIB) \
+	-Wl,-rpath-link,$(RV1126_FFMPEG_LIB) \
+	-Wl,-rpath-link,$(RV1126_SRT_LIB) \
+	-Wl,-rpath-link,$(RV1126_OPENSSL_LIB) \
+	-Wl,-rpath-link,$(RV1126_X264_LIB)
 endif
 
 all:
@@ -59,5 +69,11 @@ all:
 stub:
 	$(MAKE) ENABLE_RKNN=0 ENABLE_RKMEDIA=0
 
+test-host:
+	$(HOST_CXX) -std=c++11 -Wall -Wextra -I./include \
+		tests/test_helmet_postprocess.cpp src/ai/helmet_postprocess.cpp \
+		-o tests/test_helmet_postprocess
+	./tests/test_helmet_postprocess
+
 clean:
-	rm -f $(TARGET)
+	rm -f $(TARGET) tests/test_helmet_postprocess

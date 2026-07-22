@@ -69,8 +69,11 @@ static nn_tensor_attr_t convert_attr(const rknn_tensor_attr &src) {
     memset(&dst, 0, sizeof(dst));
     dst.index = src.index;
     dst.n_dims = src.n_dims > NN_MAX_DIMS ? NN_MAX_DIMS : src.n_dims;
+    // The legacy RV1126 RKNN API stores dimensions in reverse order. For
+    // example, logical NCHW [1, 3, 640, 640] is returned as
+    // dims=[640, 640, 3, 1]. Keep the rest of this project canonical.
     for (uint32_t i = 0; i < dst.n_dims; ++i) {
-        dst.dims[i] = src.dims[i];
+        dst.dims[i] = src.dims[src.n_dims - 1 - i];
     }
     dst.n_elems = src.n_elems;
     dst.size = src.size;
@@ -105,6 +108,20 @@ static rknn_tensor_format to_rknn_layout(nn_tensor_layout_t layout) {
     default:
         return RKNN_TENSOR_NHWC;
     }
+}
+
+static void print_tensor_attr(const char *kind, uint32_t index, const nn_tensor_attr_t &attr) {
+    printf("%s[%u]: shape=[", kind, index);
+    for (uint32_t i = 0; i < attr.n_dims; ++i) {
+        printf("%s%u", i == 0 ? "" : ",", attr.dims[i]);
+    }
+    printf("] elems=%u size=%u type=%d layout=%d scale=%f zp=%d\n",
+           attr.n_elems,
+           attr.size,
+           attr.type,
+           attr.layout,
+           attr.scale,
+           attr.zero_point);
 }
 #endif
 
@@ -142,7 +159,7 @@ int RknnEngine::LoadModel(const char *model_path) {
         return NN_ERR_MODEL;
     }
 
-    int ret = rknn_init(&ctx_, model_data, model_size, 0, NULL);
+    int ret = rknn_init(&ctx_, model_data, (uint32_t)model_size, 0);
     free(model_data);
     if (ret != RKNN_SUCC) {
         printf("rknn_init failed: %d\n", ret);
@@ -181,8 +198,7 @@ int RknnEngine::LoadModel(const char *model_path) {
             return NN_ERR_RKNN;
         }
         input_attrs_.push_back(convert_attr(attr));
-        printf("input[%u]: dims=%u size=%u type=%d layout=%d\n",
-               i, attr.n_dims, attr.size, attr.type, attr.fmt);
+        print_tensor_attr("input", i, input_attrs_.back());
     }
 
     for (uint32_t i = 0; i < output_count_; ++i) {
@@ -195,8 +211,7 @@ int RknnEngine::LoadModel(const char *model_path) {
             return NN_ERR_RKNN;
         }
         output_attrs_.push_back(convert_attr(attr));
-        printf("output[%u]: dims=%u elems=%u size=%u type=%d layout=%d scale=%f zp=%u\n",
-               i, attr.n_dims, attr.n_elems, attr.size, attr.type, attr.fmt, attr.scale, attr.zp);
+        print_tensor_attr("output", i, output_attrs_.back());
     }
 
     return NN_OK;

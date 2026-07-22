@@ -8,6 +8,7 @@ from pathlib import Path
 
 
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".bmp"}
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
 def parse_args() -> argparse.Namespace:
@@ -30,6 +31,10 @@ def main() -> int:
     args = parse_args()
     image_dir = Path(args.images)
     output_path = Path(args.output)
+    if not image_dir.is_absolute():
+        image_dir = PROJECT_ROOT / image_dir
+    if not output_path.is_absolute():
+        output_path = PROJECT_ROOT / output_path
 
     if not image_dir.exists():
         raise SystemExit(f"image directory not found: {image_dir}")
@@ -47,7 +52,11 @@ def main() -> int:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with output_path.open("w", encoding="utf-8") as fp:
         for image in images:
-            fp.write(str(image.as_posix()))
+            try:
+                portable_path = image.resolve().relative_to(PROJECT_ROOT).as_posix()
+            except ValueError:
+                portable_path = image.resolve().as_posix()
+            fp.write(portable_path)
             fp.write("\n")
 
     print(f"wrote {len(images)} images to {output_path}")

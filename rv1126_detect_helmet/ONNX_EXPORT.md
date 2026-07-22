@@ -1,10 +1,12 @@
 # ONNX 导出说明
 
-本目录提供 `tools/export_onnx.py` 作为统一 ONNX 导出入口。默认输入为：
+本目录提供 `tools/export_onnx.py` 作为统一 ONNX 导出入口。优先使用：
 
 ```text
 models/best.pt
 ```
+
+工程已经包含该权重文件。
 
 默认输出为：
 
@@ -16,10 +18,10 @@ models/helmet.onnx
 
 ## 1. YOLO26/Ultralytics 导出
 
-适用于 `yolo26_helmet` 训练得到的 `best.pt`，也适用于 Ultralytics YOLOv8/YOLO11 等模型。
+默认加载 `third_party/yolo26` 中的 Ultralytics 源码和 `models/best.pt`：
 
 ```bash
-python tools/export_onnx.py --backend ultralytics --weights models/best.pt
+python tools/export_onnx.py --backend ultralytics
 ```
 
 默认导出参数：
@@ -31,7 +33,10 @@ opset=12
 output=models/helmet.onnx
 ```
 
-如果要导出 YOLO26 one-to-many head，也就是需要板端 NMS 后处理的传统输出：
+参考工程修改过 `Detect.forward()`：ONNX 会按 P3/P4/P5 导出交替排列的 6 个
+box/class 特征图，板端 `helmet_postprocess_yolo26()` 已与此格式匹配。
+
+如果明确要导出 one-to-many 分支：
 
 ```bash
 python tools/export_onnx.py --backend ultralytics --weights models/best.pt --end2end-false

@@ -498,13 +498,8 @@ AI 5 FPS
 
 为了让 `rv1126_detect_helmet` 目录最终具备从数据集到板端部署的完整能力，建议把模型生产流程也纳入本工程。
 
-数据集来源优先复用 `yolo26_helmet/helmet.yaml` 中已经配置好的头盔数据集。当前仓库里的 `yolo26_helmet` 目录没有实际 `images/labels` 数据，只有 `helmet.yaml`，它指向外部路径：
-
-```text
-E:\YOLOV26\ultralytics-main\datasets\helmet_dataset
-```
-
-因此需要在拥有该路径的训练机上执行：
+当前工程已经把头盔图片、标注、数据集 YAML、YOLO26 源码和模型权重全部收拢到目录内。
+可以先验证内置数据集：
 
 ```bash
 python tools/import_dataset.py
@@ -519,7 +514,7 @@ DATASET.md
 完整链路如下：
 
 ```text
-导入 yolo26_helmet 指向的数据集
+验证或替换内置头盔数据集
   -> 检查 YOLO 标注格式
   -> 训练 PyTorch 模型 best.pt
   -> 验证 PyTorch 精度

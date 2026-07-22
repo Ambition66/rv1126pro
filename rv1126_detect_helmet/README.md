@@ -8,6 +8,10 @@
 
 `rv1126_detect_helmet` 是一个面向 **RV1126 板端电动车驾驶员头盔佩戴检测** 的工程。
 
+本目录已经自包含训练数据、YOLO26 源码与权重、ONNX 模型、RV1126 头文件和
+ARM32 预编译库，不再依赖工作区里的其他兄弟工程。完整复现步骤见
+[`SELF_CONTAINED.md`](SELF_CONTAINED.md)。
+
 它不是单纯的模型 demo，而是按实际产品链路设计的基础工程：摄像头采集一路视频用于推流，同时旁路抽帧给 AI 检测驾驶员是否佩戴头盔。
 
 ## 1. 工程目标
@@ -98,6 +102,10 @@ rv1126_detect_helmet/
   datasets/
     helmet_dataset/
 
+  third_party/
+    yolo26/
+    rv1126/
+
   models/
 
   include/
@@ -137,6 +145,8 @@ rv1126_detect_helmet/
 - `TRAINING.md`：训练生成 `models/best.pt` 的说明。
 - `ONNX_EXPORT.md`：从 `best.pt` 导出 `models/helmet.onnx` 的说明。
 - `RKNN_CONVERT.md`：从 ONNX 转换 `models/helmet.rknn` 的说明。
+- `MODEL_PIPELINE.md`：从初始权重、训练、ONNX/RKNN 转换到 C++ 编译部署的完整演变。
+- `SELF_CONTAINED.md`：复制本目录后独立复现所需的环境和操作步骤。
 
 ## 5. 模型产物流程
 
@@ -162,8 +172,8 @@ python tools/convert_rknn.py
 
 各脚本作用：
 
-- `tools/import_dataset.py`：读取 `../yolo26_helmet/helmet.yaml`，把外部数据集整理到当前工程。
-- `tools/train_yolo26.py`：参考 `yolo26_helmet/train.py` 训练模型，输出 `models/best.pt`。
+- `tools/import_dataset.py`：验证内置数据集，或按需导入外部数据集。
+- `tools/train_yolo26.py`：使用 `third_party/yolo26` 中的源码训练，输出 `models/best.pt`。
 - `tools/export_onnx.py`：把 `best.pt` 导出为 `models/helmet.onnx`。
 - `tools/make_quant_list.py`：从训练图片中生成 RKNN int8 量化校准列表。
 - `tools/convert_rknn.py`：调用 Rockchip RKNN Toolkit 转换得到 `models/helmet.rknn`。
@@ -274,19 +284,19 @@ BGR888
 
 媒体链路里 RGA 默认输出 `RGB888 640x640`，所以可以直接送入检测器。
 
-当前后处理是通用解析版本，假设模型输出类似：
+当前后处理已按内置 `third_party/yolo26` 的定制导出格式实现。该实现于
+`Detect.forward()` 的 ONNX 导出分支中按 P3/P4/P5 输出：
 
 ```text
-x0 y0 x1 y1 score class_id
+box_p3, class_p3, box_p4, class_p4, box_p5, class_p5
 ```
 
-或：
+板端解析包含网格/步长解码、`reg_max=1` 及通用 DFL 解码、sigmoid、置信度过滤、
+按类别 NMS 和 letterbox 坐标还原。同时兼容标准 YOLO26 端到端导出的：
 
 ```text
-cx cy w h score class_id
+[1, N, 6] = x0, y0, x1, y1, score, class_id
 ```
-
-等真实 `helmet.rknn` 在板端打印出输出 tensor shape 后，需要按实际 YOLO26/YOLOv5 输出结构修正 `HelmetDetector::Postprocess()`。
 
 ### 6.6 媒体链路
 
@@ -353,7 +363,9 @@ make stub
   --fps 25 \
   --ai-fps 5 \
   --ai-width 640 \
-  --ai-height 640
+  --ai-height 640 \
+  --conf 0.35 \
+  --nms 0.45
 ```
 
 参数说明：
@@ -365,6 +377,8 @@ make stub
 - `--fps`：主视频流帧率。
 - `--ai-fps`：AI 抽帧检测帧率。
 - `--ai-width` / `--ai-height`：RGA 输出给 AI 的图像尺寸，默认建议 `640x640`。
+- `--conf`：检测置信度阈值，默认 `0.35`。
+- `--nms`：同类别 NMS IoU 阈值，默认 `0.45`。
 
 ## 9. 当前已完成内容
 
@@ -374,16 +388,19 @@ make stub
 数据集导入
   -> 模型训练 best.pt
   -> ONNX 导出 helmet.onnx
-  -> RKNN 转换 helmet.rknn
+  -> RKNN 转换脚本与校准列表
   -> RKNN 模型加载
   -> AI 最新帧队列
   -> AI 推理线程
+  -> YOLO26 六输出/端到端输出后处理
   -> 检测结果缓存
   -> 单路 VI/VENC/FFmpeg 推流
   -> RGA AI 图像分支
 ```
 
-也就是说，这个工程已经从“方案文档”推进到了“可以进 RV1126 SDK 编译联调”的阶段。
+工程已经包含训练数据、`best.pt`、`helmet.onnx`、量化列表、转换脚本和板端依赖，
+可以独立进入老 RKNN-Toolkit 转换及 RV1126 SDK 编译联调阶段。由于当前机器没有
+老 RKNN-Toolkit，`models/helmet.rknn` 尚未生成，复现时需按 `RKNN_CONVERT.md` 执行一次转换。
 
 ## 10. 后续板端联调重点
 
@@ -392,8 +409,8 @@ make stub
 - `ENABLE_RKMEDIA=1` 下 RKMedia/FFmpeg 是否能完整编译链接。
 - 摄像头节点 `rkispp_scale0` 是否匹配实际板子的摄像头配置。
 - RGA 输出 `RGB888 640x640` 是否与实际驱动行为一致。
-- `helmet.rknn` 的真实输出 tensor shape。
-- 按真实输出 shape 修正 `HelmetDetector::Postprocess()`。
+- `helmet.rknn` 的真实输出 tensor 顺序和 layout 是否与 ONNX 一致。
+- 用同一张图片对比 PyTorch、ONNX、RKNN 的框坐标和置信度。
 - 增加未戴头盔报警、截图、叠框、上报等业务逻辑。
 
 下一步建议先在 RV1126 SDK 环境执行：

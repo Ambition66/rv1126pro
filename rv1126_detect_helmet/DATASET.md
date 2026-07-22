@@ -1,14 +1,12 @@
 # 数据集导入说明
 
-`yolo26_helmet` 目录下目前没有实际图片和标注数据集；它提供的是训练脚本和 `helmet.yaml`。
-
-`yolo26_helmet/helmet.yaml` 中的数据集根目录是：
+本工程已经直接包含实际图片和标注：
 
 ```text
-E:\YOLOV26\ultralytics-main\datasets\helmet_dataset
+datasets/helmet_dataset/images
+datasets/helmet_dataset/labels
+datasets/helmet_dataset/helmet.yaml
 ```
-
-当前这台工作区机器没有 E 盘，所以这里不能直接读取那份数据。请在拥有该数据集的训练机上执行导入。
 
 ## 导入到本工程
 
@@ -18,34 +16,11 @@ E:\YOLOV26\ultralytics-main\datasets\helmet_dataset
 python tools/import_dataset.py
 ```
 
-脚本会读取：
-
-```text
-../yolo26_helmet/helmet.yaml
-```
-
-然后复制：
-
-```text
-images/
-labels/
-```
-
-到：
-
-```text
-datasets/helmet_dataset/
-```
-
-并生成本工程使用的：
-
-```text
-datasets/helmet_dataset/helmet.yaml
-```
+默认命令只验证内置数据集是否完整，不会复制或删除文件。
 
 ## 手动指定数据集路径
 
-如果原始数据集不在 `yolo26_helmet/helmet.yaml` 写的路径，可以手动指定：
+需要用另一份数据集替换内置数据时，可以手动指定：
 
 ```bash
 python tools/import_dataset.py --source-dir D:\datasets\helmet_dataset --overwrite

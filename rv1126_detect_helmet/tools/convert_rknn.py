@@ -8,7 +8,11 @@ The generated RKNN should be copied to models/helmet.rknn on the RV1126 board.
 from __future__ import annotations
 
 import argparse
+import os
 from pathlib import Path
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
 def parse_args() -> argparse.Namespace:
@@ -49,6 +53,7 @@ def parse_str_list(value: str) -> list[str] | None:
 
 def main() -> int:
     args = parse_args()
+    os.chdir(PROJECT_ROOT)
 
     try:
         from rknn.api import RKNN
@@ -60,6 +65,12 @@ def main() -> int:
     onnx_path = Path(args.onnx)
     output_path = Path(args.output)
     dataset_path = Path(args.dataset)
+    if not onnx_path.is_absolute():
+        onnx_path = PROJECT_ROOT / onnx_path
+    if not output_path.is_absolute():
+        output_path = PROJECT_ROOT / output_path
+    if not dataset_path.is_absolute():
+        dataset_path = PROJECT_ROOT / dataset_path
 
     if not onnx_path.exists():
         raise SystemExit(f"ONNX file not found: {onnx_path}")

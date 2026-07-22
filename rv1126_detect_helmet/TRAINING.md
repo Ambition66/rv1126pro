@@ -10,13 +10,7 @@ models/best.pt
 
 ## 1. 数据集准备
 
-先确认数据来源。`yolo26_helmet/helmet.yaml` 已经给出了训练数据集路径，但该路径在当前工作区机器上不可访问：
-
-```text
-E:\YOLOV26\ultralytics-main\datasets\helmet_dataset
-```
-
-请在拥有这份数据集的训练机上，先执行导入：
+数据集已经包含在本工程中，可先执行完整性检查：
 
 ```bash
 python tools/import_dataset.py
@@ -78,13 +72,13 @@ names: ["rider", "helmet", "no_helmet"]
 
 训练应在 PC 上执行，建议使用带 NVIDIA GPU 的 Linux/Windows 环境。
 
-需要安装：
+本工程把定制 YOLO26 源码放在 `third_party/yolo26`。安装训练依赖：
 
 ```bash
-pip install ultralytics
+python -m pip install -r requirements-training.txt
 ```
 
-如果使用本仓库的 `yolo26_helmet` 环境，也可以在那个环境中运行本脚本。
+训练脚本默认直接加载这份本地源码，仍可通过 `--ultralytics-dir` 指定另一份实现。
 
 ## 3. 开始训练
 
