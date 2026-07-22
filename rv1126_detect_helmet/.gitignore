@@ -1,0 +1,9 @@
+build/
+runs/
+*.o
+rv1126_detect_helmet_app
+models/*.pt
+models/*.onnx
+models/*.rknn
+datasets/helmet_dataset/images/
+datasets/helmet_dataset/labels/
