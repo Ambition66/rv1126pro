@@ -58,7 +58,7 @@ void *AiWorker::ThreadEntry(void *arg) {
 }
 
 void AiWorker::RunLoop() {
-    while (running_) {
+    while (running_.load()) {
         helmet_frame_t frame;
         int ret = queue_->PopLatest(&frame);
         if (ret != 0) {

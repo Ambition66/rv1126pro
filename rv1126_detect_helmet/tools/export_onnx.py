@@ -12,7 +12,7 @@ Examples:
 
     python tools/export_onnx.py --backend ultralytics --weights models/best.pt --end2end-false
 
-    python tools/export_onnx.py --backend yolov5 --weights models/best.pt --yolov5-dir ../yolov5
+    python tools/export_onnx.py --backend yolov5 --weights models/best.pt --yolov5-dir /path/to/yolov5
 """
 
 from __future__ import annotations
@@ -20,12 +20,14 @@ from __future__ import annotations
 import argparse
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_WEIGHTS = PROJECT_ROOT / "models" / "best.pt"
 DEFAULT_OUTPUT = PROJECT_ROOT / "models" / "helmet.onnx"
+VENDORED_ULTRALYTICS = PROJECT_ROOT / "third_party" / "yolo26"
 
 
 def parse_args() -> argparse.Namespace:
@@ -41,6 +43,12 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=DEFAULT_WEIGHTS,
         help="Path to trained .pt weights. Default: models/best.pt",
+    )
+    parser.add_argument(
+        "--ultralytics-dir",
+        type=Path,
+        default=VENDORED_ULTRALYTICS,
+        help="YOLO26 source tree used for export. Default: third_party/yolo26",
     )
     parser.add_argument(
         "--output",
@@ -92,6 +100,11 @@ def normalize_output(src_onnx: Path, dst_onnx: Path) -> Path:
 
 
 def export_with_ultralytics(args: argparse.Namespace) -> Path:
+    ultralytics_dir = args.ultralytics_dir.resolve()
+    if not (ultralytics_dir / "ultralytics" / "__init__.py").is_file():
+        raise FileNotFoundError(f"ultralytics source tree not found: {ultralytics_dir}")
+    sys.path.insert(0, str(ultralytics_dir))
+
     try:
         from ultralytics import YOLO
     except ImportError as exc:

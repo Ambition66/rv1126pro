@@ -19,17 +19,17 @@ RK3588      -> RKNPU2 / RKNN-Toolkit2
 当前工程已经发现并复用了这些老 RV1126 资源：
 
 ```text
-rv1126_AI/face_smoking_phone_sleep/include/rknn_api.h
-rv1126_ffmpeg/rv1126_lib/librknn_api.so
-rv1126_ffmpeg/rv1126_lib/librknn_runtime.so
-rv1126_AI/model_trans/onnx_convert.py
+third_party/rv1126/include/rknn/rknn_api.h
+third_party/rv1126/lib/platform/librknn_api.so
+third_party/rv1126/lib/platform/librknn_runtime.so
+tools/convert_rknn.py
 ```
 
 `Makefile` 默认配置：
 
 ```makefile
-RKNN_INC ?= ../rv1126_AI/face_smoking_phone_sleep/include
-RKNN_LIB ?= ../rv1126_ffmpeg/rv1126_lib/librknn_api.so
+RKNN_INC ?= ./third_party/rv1126/include/rknn
+RKNN_LIB ?= ./third_party/rv1126/lib/platform/librknn_api.so
 ```
 
 如果实际 RV1126 SDK 的头文件或库路径不同，编译时覆盖这两个变量即可。

@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 """Train a YOLO26 helmet detector and normalize the output as models/best.pt.
 
-This script follows the training style used by ../yolo26_helmet/train.py, but
-keeps paths relative to rv1126_detect_helmet so the model pipeline can be
-reproduced from this directory.
+This script uses the vendored YOLO26 implementation under third_party/yolo26
+so the model pipeline can be reproduced from this directory alone.
 
 Example:
     python tools/train_yolo26.py
@@ -14,21 +13,31 @@ Example:
 from __future__ import annotations
 
 import argparse
+import os
 import shutil
+import sys
 from pathlib import Path
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_DATA = PROJECT_ROOT / "datasets" / "helmet_dataset" / "helmet.yaml"
 DEFAULT_EXPORT = PROJECT_ROOT / "models" / "best.pt"
+DEFAULT_MODEL = PROJECT_ROOT / "models" / "yolo26n.pt"
+VENDORED_ULTRALYTICS = PROJECT_ROOT / "third_party" / "yolo26"
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Train YOLO26 helmet detector.")
     parser.add_argument(
         "--model",
-        default="yolo26n.pt",
+        default=DEFAULT_MODEL,
         help="Initial model weights or YAML, e.g. yolo26n.pt.",
+    )
+    parser.add_argument(
+        "--ultralytics-dir",
+        type=Path,
+        default=VENDORED_ULTRALYTICS,
+        help="YOLO26 source tree. Default: third_party/yolo26",
     )
     parser.add_argument(
         "--data",
@@ -79,12 +88,19 @@ def parse_batch(value: str) -> int | float:
 
 def main() -> int:
     args = parse_args()
+    # helmet.yaml intentionally uses a project-relative path for portability.
+    os.chdir(PROJECT_ROOT)
     data = args.data if args.data.is_absolute() else PROJECT_ROOT / args.data
     project = args.project if args.project.is_absolute() else PROJECT_ROOT / args.project
     export_best = args.export_best if args.export_best.is_absolute() else PROJECT_ROOT / args.export_best
 
     if not data.is_file():
         raise FileNotFoundError(f"dataset yaml not found: {data}")
+
+    ultralytics_dir = args.ultralytics_dir.resolve()
+    if not (ultralytics_dir / "ultralytics" / "__init__.py").is_file():
+        raise FileNotFoundError(f"ultralytics source tree not found: {ultralytics_dir}")
+    sys.path.insert(0, str(ultralytics_dir))
 
     try:
         from ultralytics import YOLO

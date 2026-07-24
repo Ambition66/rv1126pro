@@ -1,0 +1,6 @@
+# The exact YOLO26 fork used by this project is vendored locally.
+-e ./third_party/yolo26
+
+# ONNX export/inspection dependencies.
+onnx>=1.12.0
+onnxslim>=0.1.71

@@ -14,6 +14,7 @@ public:
     ~HelmetDetector();
 
     int LoadModel(const char *model_path);
+    void SetThresholds(float confidence_threshold, float nms_threshold);
     int Run(const helmet_frame_t &frame, helmet_result_t *result);
     void Release();
 
@@ -26,6 +27,8 @@ private:
     bool ready_;
     int input_width_;
     int input_height_;
+    float confidence_threshold_;
+    float nms_threshold_;
     RknnEngine engine_;
     nn_tensor_t input_tensor_;
     std::vector<nn_tensor_t> output_tensors_;

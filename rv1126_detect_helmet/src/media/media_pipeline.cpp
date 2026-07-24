@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <pthread.h>
+#include <atomic>
 #include <queue>
 
 #ifdef ENABLE_RKMEDIA
@@ -510,7 +511,7 @@ private:
     }
 
     void VencLoop() {
-        while (running_) {
+        while (running_.load()) {
             // 从 VENC 通道取已经编码好的 H264 数据包。
             MEDIA_BUFFER mb = RK_MPI_SYS_GetMediaBuffer(RK_ID_VENC, VENC_CHN_ID, 100);
             if (!mb) {
@@ -526,7 +527,7 @@ private:
     }
 
     void PushLoop() {
-        while (running_) {
+        while (running_.load()) {
             // 将 H264 包封装成 FLV/TS 并写到网络地址。
             EncodedPacket *packet = packet_queue_.Pop();
             if (!packet) {
@@ -543,7 +544,7 @@ private:
     }
 
     void AiFrameLoop() {
-        while (running_) {
+        while (running_.load()) {
             // RGA 输出 RGB888 图像，按 ai_interval 抽帧送给 AI 队列。
             MEDIA_BUFFER mb = RK_MPI_SYS_GetMediaBuffer(RK_ID_RGA, RGA_CHN_ID, 100);
             if (!mb) {
@@ -572,7 +573,7 @@ private:
     media_pipeline_config_t config_;
     AiFrameQueue *ai_queue_;
     AiResultManager *result_manager_;
-    bool running_;
+    std::atomic<bool> running_;
     bool rkmedia_ready_;
     bool vi_ready_;
     bool venc_ready_;
@@ -637,8 +638,9 @@ int MediaPipeline::Start() {
     if (!impl_) {
         return -1;
     }
-    running_ = true;
-    return static_cast<MediaPipelineImpl *>(impl_)->Start();
+    const int ret = static_cast<MediaPipelineImpl *>(impl_)->Start();
+    running_ = ret == 0;
+    return ret;
 #else
     running_ = true;
     return 0;
@@ -646,10 +648,6 @@ int MediaPipeline::Start() {
 }
 
 void MediaPipeline::Stop() {
-    if (!running_) {
-        return;
-    }
-
 #ifdef ENABLE_RKMEDIA
     if (impl_) {
         static_cast<MediaPipelineImpl *>(impl_)->Stop();

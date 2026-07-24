@@ -1,4 +1,5 @@
 #include "helmet_detector.h"
+#include "helmet_postprocess.h"
 
 #include <algorithm>
 #include <stdio.h>
@@ -9,6 +10,8 @@ HelmetDetector::HelmetDetector()
     : ready_(false),
       input_width_(640),
       input_height_(640),
+      confidence_threshold_(0.35f),
+      nms_threshold_(0.45f),
       want_float_(true) {
     memset(&input_tensor_, 0, sizeof(input_tensor_));
 }
@@ -87,6 +90,15 @@ int HelmetDetector::LoadModel(const char *model_path) {
            (unsigned)output_tensors_.size());
     ready_ = true;
     return 0;
+}
+
+void HelmetDetector::SetThresholds(float confidence_threshold, float nms_threshold) {
+    if (confidence_threshold > 0.0f && confidence_threshold < 1.0f) {
+        confidence_threshold_ = confidence_threshold;
+    }
+    if (nms_threshold > 0.0f && nms_threshold < 1.0f) {
+        nms_threshold_ = nms_threshold;
+    }
 }
 
 int HelmetDetector::Run(const helmet_frame_t &frame, helmet_result_t *result) {
@@ -170,69 +182,18 @@ int HelmetDetector::Inference() {
 }
 
 int HelmetDetector::Postprocess(const helmet_frame_t &frame, helmet_result_t *result) {
-    memset(result, 0, sizeof(*result));
-    result->frame_id = frame.frame_id;
-    result->timestamp_ms = frame.timestamp_ms;
-    result->width = frame.width;
-    result->height = frame.height;
-
-    if (output_tensors_.empty() || !output_tensors_[0].data) {
-        return 0;
+    const int ret = helmet_postprocess_yolo26(output_tensors_,
+                                               input_width_,
+                                               input_height_,
+                                               frame,
+                                               confidence_threshold_,
+                                               nms_threshold_,
+                                               result);
+    if (ret != NN_OK) {
+        printf("unsupported YOLO26 output layout: tensors=%u ret=%d\n",
+               (unsigned)output_tensors_.size(), ret);
     }
-
-    const nn_tensor_t &out = output_tensors_[0];
-    if (out.attr.type != NN_TYPE_FLOAT32) {
-        printf("postprocess currently expects float output\n");
-        return -1;
-    }
-
-    const float *data = (const float *)out.data;
-    const uint32_t elem_count = out.attr.n_elems;
-    // 当前是通用占位解析：每个候选框 6 个 float。
-    // 拿到真实 helmet.rknn 输出 shape 后，需要在这里替换为精确 YOLO 解码/NMS。
-    const uint32_t stride = 6;
-    const uint32_t rows = elem_count / stride;
-    for (uint32_t i = 0; i < rows && result->detection_count < HELMET_MAX_DETECTIONS; ++i) {
-        const float *p = data + i * stride;
-        float score = p[4];
-        int class_id = (int)(p[5] + 0.5f);
-        if (score < 0.35f) {
-            continue;
-        }
-        if (class_id != HELMET_CLASS_HELMET && class_id != HELMET_CLASS_NO_HELMET) {
-            continue;
-        }
-
-        float x0 = p[0];
-        float y0 = p[1];
-        float x1 = p[2];
-        float y1 = p[3];
-        // 兼容 xyxy 和 cxcywh 两种常见输出形式。
-        if (x1 <= x0 || y1 <= y0) {
-            x0 = p[0] - p[2] * 0.5f;
-            y0 = p[1] - p[3] * 0.5f;
-            x1 = p[0] + p[2] * 0.5f;
-            y1 = p[1] + p[3] * 0.5f;
-        }
-
-        // 如果坐标是 0~1 归一化值，换算回当前 AI 输入帧尺寸。
-        if (x1 <= 1.5f && y1 <= 1.5f) {
-            x0 *= frame.width;
-            x1 *= frame.width;
-            y0 *= frame.height;
-            y1 *= frame.height;
-        }
-
-        helmet_detection_t *det = &result->detections[result->detection_count++];
-        det->class_id = class_id;
-        det->confidence = score;
-        det->x = std::max(0, (int)x0);
-        det->y = std::max(0, (int)y0);
-        det->w = std::min(frame.width - det->x, std::max(0, (int)(x1 - x0)));
-        det->h = std::min(frame.height - det->y, std::max(0, (int)(y1 - y0)));
-    }
-
-    return 0;
+    return ret;
 }
 
 void HelmetDetector::FreeTensors() {
