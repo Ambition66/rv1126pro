@@ -3,26 +3,36 @@
 #include <stdlib.h>
 #include <string.h>
 
-AiFrameQueue::AiFrameQueue() : has_frame_(false), closed_(false) {
+AiFrameQueue::AiFrameQueue()
+    : queued_buffer_(-1), has_frame_(false), closed_(false) {
     pthread_mutex_init(&mutex_, NULL);
     pthread_cond_init(&cond_, NULL);
     memset(&frame_, 0, sizeof(frame_));
+    memset(buffers_, 0, sizeof(buffers_));
+    memset(buffer_capacities_, 0, sizeof(buffer_capacities_));
+    memset(buffer_in_use_, 0, sizeof(buffer_in_use_));
 }
 
 AiFrameQueue::~AiFrameQueue() {
     pthread_mutex_lock(&mutex_);
     ClearLocked();
+    for (int i = 0; i < BUFFER_COUNT; ++i) {
+        free(buffers_[i]);
+        buffers_[i] = NULL;
+        buffer_capacities_[i] = 0;
+        buffer_in_use_[i] = false;
+    }
     pthread_mutex_unlock(&mutex_);
     pthread_mutex_destroy(&mutex_);
     pthread_cond_destroy(&cond_);
 }
 
 void AiFrameQueue::ClearLocked() {
-    if (frame_.data) {
-        free(frame_.data);
-        frame_.data = NULL;
+    if (queued_buffer_ >= 0) {
+        buffer_in_use_[queued_buffer_] = false;
     }
     memset(&frame_, 0, sizeof(frame_));
+    queued_buffer_ = -1;
     has_frame_ = false;
 }
 
@@ -31,23 +41,45 @@ int AiFrameQueue::PushLatest(const helmet_frame_t &frame) {
         return -1;
     }
 
-    // 这里必须拷贝帧数据：媒体层释放 MEDIA_BUFFER 后，原始指针就不能再使用。
-    unsigned char *copy = (unsigned char *)malloc(frame.size);
-    if (!copy) {
-        return -2;
-    }
-    memcpy(copy, frame.data, frame.size);
-
     pthread_mutex_lock(&mutex_);
     if (closed_) {
         pthread_mutex_unlock(&mutex_);
-        free(copy);
         return -3;
     }
-    // AI 侧只需要最新画面。旧帧直接丢弃，可以避免推理慢时出现多秒延迟。
-    ClearLocked();
+
+    // Reuse the queued slot when replacing a stale frame. Otherwise select a
+    // slot that is not currently owned by the AI worker.
+    int slot = queued_buffer_;
+    if (slot < 0) {
+        for (int i = 0; i < BUFFER_COUNT; ++i) {
+            if (!buffer_in_use_[i]) {
+                slot = i;
+                break;
+            }
+        }
+    }
+    if (slot < 0) {
+        pthread_mutex_unlock(&mutex_);
+        return -2;
+    }
+
+    // Buffers grow only when the input shape grows, not once per frame.
+    if (buffer_capacities_[slot] < (size_t)frame.size) {
+        unsigned char *resized =
+            (unsigned char *)realloc(buffers_[slot], (size_t)frame.size);
+        if (!resized) {
+            pthread_mutex_unlock(&mutex_);
+            return -2;
+        }
+        buffers_[slot] = resized;
+        buffer_capacities_[slot] = (size_t)frame.size;
+    }
+
+    memcpy(buffers_[slot], frame.data, (size_t)frame.size);
     frame_ = frame;
-    frame_.data = copy;
+    frame_.data = buffers_[slot];
+    buffer_in_use_[slot] = true;
+    queued_buffer_ = slot;
     has_frame_ = true;
     pthread_cond_signal(&cond_);
     pthread_mutex_unlock(&mutex_);
@@ -60,7 +92,6 @@ int AiFrameQueue::PopLatest(helmet_frame_t *frame) {
     }
 
     pthread_mutex_lock(&mutex_);
-    // 没有新帧时阻塞等待；Close() 会唤醒这里，用于线程退出。
     while (!has_frame_ && !closed_) {
         pthread_cond_wait(&cond_, &mutex_);
     }
@@ -68,11 +99,35 @@ int AiFrameQueue::PopLatest(helmet_frame_t *frame) {
         pthread_mutex_unlock(&mutex_);
         return 1;
     }
+
     *frame = frame_;
     memset(&frame_, 0, sizeof(frame_));
+    queued_buffer_ = -1;
     has_frame_ = false;
     pthread_mutex_unlock(&mutex_);
     return 0;
+}
+
+int AiFrameQueue::ReleaseFrame(helmet_frame_t *frame) {
+    if (!frame || !frame->data) {
+        return -1;
+    }
+
+    pthread_mutex_lock(&mutex_);
+    int released = -1;
+    for (int i = 0; i < BUFFER_COUNT; ++i) {
+        if (buffers_[i] == frame->data) {
+            buffer_in_use_[i] = false;
+            released = 0;
+            break;
+        }
+    }
+    pthread_mutex_unlock(&mutex_);
+
+    if (released == 0) {
+        memset(frame, 0, sizeof(*frame));
+    }
+    return released;
 }
 
 void AiFrameQueue::Close() {

@@ -5,6 +5,17 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
+
+namespace {
+
+uint64_t monotonic_us() {
+    struct timespec now;
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    return (uint64_t)now.tv_sec * 1000000ULL + (uint64_t)now.tv_nsec / 1000ULL;
+}
+
+}  // namespace
 
 HelmetDetector::HelmetDetector()
     : ready_(false),
@@ -12,7 +23,11 @@ HelmetDetector::HelmetDetector()
       input_height_(640),
       confidence_threshold_(0.35f),
       nms_threshold_(0.45f),
-      want_float_(true) {
+      want_float_(true),
+      perf_count_(0),
+      preprocess_total_us_(0),
+      inference_total_us_(0),
+      postprocess_total_us_(0) {
     memset(&input_tensor_, 0, sizeof(input_tensor_));
 }
 
@@ -68,6 +83,18 @@ int HelmetDetector::LoadModel(const char *model_path) {
     }
 
     const std::vector<nn_tensor_attr_t> &outputs = engine_.OutputAttrs();
+    // Keep a single end-to-end tensor on the compatible float path. For the
+    // normal six-output quantized YOLO26 head, preserve INT8/UINT8 and let the
+    // postprocessor dequantize values on demand.
+    want_float_ = outputs.size() == 1;
+    for (size_t i = 0; i < outputs.size(); ++i) {
+        const bool quantized =
+            outputs[i].type == NN_TYPE_INT8 || outputs[i].type == NN_TYPE_UINT8;
+        if (!quantized || outputs[i].scale <= 0.0f) {
+            want_float_ = true;
+            break;
+        }
+    }
     for (size_t i = 0; i < outputs.size(); ++i) {
         nn_tensor_t tensor;
         memset(&tensor, 0, sizeof(tensor));
@@ -83,11 +110,12 @@ int HelmetDetector::LoadModel(const char *model_path) {
         output_tensors_.push_back(tensor);
     }
 
-    printf("HelmetDetector loaded: model=%s input=%dx%d outputs=%u\n",
+    printf("HelmetDetector loaded: model=%s input=%dx%d outputs=%u output_mode=%s\n",
            model_path,
            input_width_,
            input_height_,
-           (unsigned)output_tensors_.size());
+           (unsigned)output_tensors_.size(),
+           want_float_ ? "float" : "quantized");
     ready_ = true;
     return 0;
 }
@@ -109,17 +137,43 @@ int HelmetDetector::Run(const helmet_frame_t &frame, helmet_result_t *result) {
         return -2;
     }
 
+    const uint64_t preprocess_begin = monotonic_us();
     int ret = Preprocess(frame);
+    const uint64_t preprocess_end = monotonic_us();
     if (ret != 0) {
         return ret;
     }
 
+    const uint64_t inference_begin = monotonic_us();
     ret = Inference();
+    const uint64_t inference_end = monotonic_us();
     if (ret != 0) {
         return ret;
     }
 
-    return Postprocess(frame, result);
+    const uint64_t postprocess_begin = monotonic_us();
+    ret = Postprocess(frame, result);
+    const uint64_t postprocess_end = monotonic_us();
+    if (ret != 0) {
+        return ret;
+    }
+
+    preprocess_total_us_ += preprocess_end - preprocess_begin;
+    inference_total_us_ += inference_end - inference_begin;
+    postprocess_total_us_ += postprocess_end - postprocess_begin;
+    ++perf_count_;
+    if (perf_count_ % 30 == 0) {
+        const uint64_t total_us =
+            preprocess_total_us_ + inference_total_us_ + postprocess_total_us_;
+        printf("AI perf avg(%llu): preprocess=%.2fms inference=%.2fms "
+               "postprocess=%.2fms total=%.2fms\n",
+               (unsigned long long)perf_count_,
+               preprocess_total_us_ / (double)perf_count_ / 1000.0,
+               inference_total_us_ / (double)perf_count_ / 1000.0,
+               postprocess_total_us_ / (double)perf_count_ / 1000.0,
+               total_us / (double)perf_count_ / 1000.0);
+    }
+    return 0;
 }
 
 void HelmetDetector::Release() {
@@ -140,6 +194,21 @@ int HelmetDetector::Preprocess(const helmet_frame_t &frame) {
     unsigned char *dst = (unsigned char *)input_tensor_.data;
     const unsigned char *src = frame.data;
     const int src_stride = frame.width * 3;
+    const size_t source_bytes = (size_t)src_stride * frame.height;
+    if ((size_t)frame.size < source_bytes) {
+        printf("invalid RGB frame size: got=%d expected>=%u\n",
+               frame.size, (unsigned)source_bytes);
+        return -3;
+    }
+
+    // RGA already produced the exact model layout. Avoid both the padding
+    // memset and the per-pixel resize loop on this fast path.
+    if (frame.format == HELMET_IMAGE_RGB888 &&
+        frame.width == input_width_ &&
+        frame.height == input_height_) {
+        memcpy(dst, src, source_bytes);
+        return 0;
+    }
 
     // 114 是 YOLO 系列 letterbox 常用填充值，避免边缘填充过黑或过白。
     memset(dst, 114, input_tensor_.attr.size);
@@ -152,8 +221,23 @@ int HelmetDetector::Preprocess(const helmet_frame_t &frame) {
     int pad_x = (input_width_ - resize_w) / 2;
     int pad_y = (input_height_ - resize_h) / 2;
 
-    // 当前先用 CPU 做最近邻 resize + letterbox。
-    // 板端媒体链路已经让 RGA 输出 640x640 RGB888，因此正常情况下这里开销很小。
+    // RGA keeps the source aspect ratio. Normally only letterbox padding
+    // remains, so copy whole RGB rows instead of visiting every pixel.
+    if (frame.format == HELMET_IMAGE_RGB888 &&
+        resize_w == frame.width &&
+        resize_h == frame.height) {
+        unsigned char *row_dst =
+            dst + ((size_t)pad_y * input_width_ + pad_x) * 3;
+        for (int y = 0; y < frame.height; ++y) {
+            memcpy(row_dst + (size_t)y * input_width_ * 3,
+                   src + (size_t)y * src_stride,
+                   (size_t)src_stride);
+        }
+        return 0;
+    }
+
+    // Fallback for non-standard input dimensions or BGR input. The normal
+    // board path has already been resized by RGA and uses the row-copy path.
     for (int y = 0; y < resize_h; ++y) {
         int src_y = std::min((int)(y / scale), frame.height - 1);
         for (int x = 0; x < resize_w; ++x) {
@@ -208,4 +292,8 @@ void HelmetDetector::FreeTensors() {
         }
     }
     output_tensors_.clear();
+    perf_count_ = 0;
+    preprocess_total_us_ = 0;
+    inference_total_us_ = 0;
+    postprocess_total_us_ = 0;
 }

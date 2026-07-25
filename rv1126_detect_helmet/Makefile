@@ -74,6 +74,10 @@ test-host:
 		tests/test_helmet_postprocess.cpp src/ai/helmet_postprocess.cpp \
 		-o tests/test_helmet_postprocess
 	./tests/test_helmet_postprocess
+	$(HOST_CXX) -std=c++11 -Wall -Wextra -I./include \
+		tests/test_ai_frame_queue.cpp src/ai/ai_frame_queue.cpp \
+		-lpthread -o tests/test_ai_frame_queue
+	./tests/test_ai_frame_queue
 
 clean:
-	rm -f $(TARGET) tests/test_helmet_postprocess
+	rm -f $(TARGET) tests/test_helmet_postprocess tests/test_ai_frame_queue

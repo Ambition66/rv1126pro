@@ -75,7 +75,9 @@ void AiWorker::RunLoop() {
         }
 
         if (frame.data) {
-            free(frame.data);
+            if (queue_->ReleaseFrame(&frame) != 0) {
+                free(frame.data);
+            }
         }
     }
 }

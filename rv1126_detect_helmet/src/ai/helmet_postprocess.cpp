@@ -32,7 +32,14 @@ static float sigmoid(float value) {
 }
 
 static bool get_feature_shape(const nn_tensor_t &tensor, FeatureShape *shape) {
-    if (!shape || !tensor.data || tensor.attr.type != NN_TYPE_FLOAT32 || tensor.attr.n_dims != 4) {
+    const bool supported_type =
+        tensor.attr.type == NN_TYPE_FLOAT32 ||
+        tensor.attr.type == NN_TYPE_INT8 ||
+        tensor.attr.type == NN_TYPE_UINT8;
+    if (!shape || !tensor.data || !supported_type || tensor.attr.n_dims != 4) {
+        return false;
+    }
+    if (tensor.attr.type != NN_TYPE_FLOAT32 && tensor.attr.scale <= 0.0f) {
         return false;
     }
 
@@ -55,14 +62,22 @@ static float feature_value(const nn_tensor_t &tensor,
                            int channel,
                            int y,
                            int x) {
-    const float *data = static_cast<const float *>(tensor.data);
     size_t index;
     if (shape.nhwc) {
         index = ((size_t)y * shape.width + x) * shape.channels + channel;
     } else {
         index = ((size_t)channel * shape.height + y) * shape.width + x;
     }
-    return data[index];
+    if (tensor.attr.type == NN_TYPE_FLOAT32) {
+        const float *data = static_cast<const float *>(tensor.data);
+        return data[index];
+    }
+    if (tensor.attr.type == NN_TYPE_INT8) {
+        const int8_t *data = static_cast<const int8_t *>(tensor.data);
+        return ((int32_t)data[index] - tensor.attr.zero_point) * tensor.attr.scale;
+    }
+    const uint8_t *data = static_cast<const uint8_t *>(tensor.data);
+    return ((int32_t)data[index] - tensor.attr.zero_point) * tensor.attr.scale;
 }
 
 static float decode_distance(const nn_tensor_t &box,
@@ -71,6 +86,8 @@ static float decode_distance(const nn_tensor_t &box,
                              int reg_max,
                              int y,
                              int x) {
+    // YOLO26 uses nn.Identity instead of DFL for reg_max == 1, so these four
+    // channels are direct ltrb distances rather than one-bin distributions.
     if (reg_max == 1) {
         return std::max(0.0f, feature_value(box, shape, side, y, x));
     }

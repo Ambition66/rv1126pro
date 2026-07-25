@@ -4,6 +4,7 @@
 #include "helmet_types.h"
 #include "rknn_engine.h"
 
+#include <stdint.h>
 #include <vector>
 
 // 头盔检测业务封装：把一帧 RGB/BGR 图像转换为 helmet_result_t。
@@ -33,6 +34,10 @@ private:
     nn_tensor_t input_tensor_;
     std::vector<nn_tensor_t> output_tensors_;
     bool want_float_;
+    uint64_t perf_count_;
+    uint64_t preprocess_total_us_;
+    uint64_t inference_total_us_;
+    uint64_t postprocess_total_us_;
 };
 
 #endif

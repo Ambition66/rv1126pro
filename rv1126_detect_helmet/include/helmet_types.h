@@ -41,7 +41,7 @@ typedef struct {
     helmet_detection_t detections[HELMET_MAX_DETECTIONS];
 } helmet_result_t;
 
-// AI 输入帧。data 的所有权由生产者/队列约定，AiFrameQueue::PushLatest 会复制数据。
+// AI 输入帧。AiFrameQueue 会复制到内部复用缓冲池，消费者处理后调用 ReleaseFrame。
 typedef struct {
     int frame_id;
     uint64_t timestamp_ms;

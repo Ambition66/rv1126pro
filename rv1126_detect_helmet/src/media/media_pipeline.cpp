@@ -1,9 +1,11 @@
 #include "media_pipeline.h"
 
 #include <stdio.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 #include <pthread.h>
+#include <algorithm>
 #include <atomic>
 #include <queue>
 
@@ -238,7 +240,9 @@ public:
           push_thread_(0),
           ai_thread_(0),
           frame_id_(0),
-          ai_interval_(5) {
+          ai_schedule_accumulator_(0),
+          rga_width_(0),
+          rga_height_(0) {
         memset(&config_, 0, sizeof(config_));
     }
 
@@ -257,11 +261,24 @@ public:
         if (config_.ai_height <= 0) {
             config_.ai_height = 640;
         }
-        // 用主码流 fps / AI fps 得到抽帧间隔。例如 25fps 视频、5fps AI，则每 5 帧送一次 AI。
-        ai_interval_ = config_.ai_fps > 0 ? config_.fps / config_.ai_fps : config_.fps;
-        if (ai_interval_ <= 0) {
-            ai_interval_ = 1;
+        // Use an accumulator so non-divisible rates such as 25 -> 15 FPS are
+        // scheduled accurately instead of degenerating to every frame.
+        ai_schedule_accumulator_ = 0;
+
+        // Fit the camera image inside the requested model canvas without
+        // stretching. HelmetDetector adds the remaining letterbox padding.
+        rga_width_ = config_.ai_width;
+        rga_height_ = config_.ai_height;
+        if ((int64_t)config_.width * config_.ai_height >
+            (int64_t)config_.height * config_.ai_width) {
+            rga_height_ = (int)((int64_t)config_.height * config_.ai_width /
+                                config_.width);
+        } else {
+            rga_width_ = (int)((int64_t)config_.width * config_.ai_height /
+                               config_.height);
         }
+        rga_width_ = std::max(2, rga_width_ & ~1);
+        rga_height_ = std::max(2, rga_height_ & ~1);
 
         int ret = InitRkmedia();
         if (ret != 0) {
@@ -394,10 +411,10 @@ private:
         rga_attr.stImgIn.u32HorStride = config_.width;
         rga_attr.stImgIn.u32VirStride = config_.height;
         rga_attr.stImgIn.imgType = IMAGE_TYPE_NV12;
-        rga_attr.stImgOut.u32Width = config_.ai_width;
-        rga_attr.stImgOut.u32Height = config_.ai_height;
-        rga_attr.stImgOut.u32HorStride = config_.ai_width;
-        rga_attr.stImgOut.u32VirStride = config_.ai_height;
+        rga_attr.stImgOut.u32Width = rga_width_;
+        rga_attr.stImgOut.u32Height = rga_height_;
+        rga_attr.stImgOut.u32HorStride = rga_width_;
+        rga_attr.stImgOut.u32VirStride = rga_height_;
         rga_attr.stImgOut.imgType = IMAGE_TYPE_RGB888;
         rga_attr.u16BufPoolCnt = 3;
         rga_attr.u16Rotaion = 0;
@@ -443,9 +460,12 @@ private:
         bind_rga_ready_ = true;
 
         rkmedia_ready_ = true;
-        printf("RKMedia ready: stream=%dx%d ai=%dx%d fps=%d ai_fps=%d\n",
+        printf("RKMedia ready: stream=%dx%d rga=%dx%d model_canvas=%dx%d "
+               "fps=%d ai_fps=%d\n",
                config_.width,
                config_.height,
+               rga_width_,
+               rga_height_,
                config_.ai_width,
                config_.ai_height,
                config_.fps,
@@ -552,13 +572,15 @@ private:
             }
 
             int current_id = frame_id_++;
-            if (current_id % ai_interval_ == 0) {
+            ai_schedule_accumulator_ += config_.ai_fps;
+            if (ai_schedule_accumulator_ >= config_.fps) {
+                ai_schedule_accumulator_ -= config_.fps;
                 helmet_frame_t frame;
                 memset(&frame, 0, sizeof(frame));
                 frame.frame_id = current_id;
                 frame.timestamp_ms = (uint64_t)(av_gettime_relative() / 1000);
-                frame.width = config_.ai_width;
-                frame.height = config_.ai_height;
+                frame.width = rga_width_;
+                frame.height = rga_height_;
                 frame.format = HELMET_IMAGE_RGB888;
                 frame.data = (unsigned char *)RK_MPI_MB_GetPtr(mb);
                 frame.size = (int)RK_MPI_MB_GetSize(mb);
@@ -584,7 +606,9 @@ private:
     pthread_t push_thread_;
     pthread_t ai_thread_;
     int frame_id_;
-    int ai_interval_;
+    int ai_schedule_accumulator_;
+    int rga_width_;
+    int rga_height_;
     EncodedPacketQueue packet_queue_;
     FfmpegWriter writer_;
 };
